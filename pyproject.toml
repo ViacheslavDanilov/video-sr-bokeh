@@ -8,9 +8,12 @@ dependencies = []
 
 [tool.uv]
 package = true
-default-groups = ["app", "dev", "ci"]
+default-groups = ["dev", "ci"]
 
 [dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
 ci = [
     "pre-commit>=4.5.0",
 ]
