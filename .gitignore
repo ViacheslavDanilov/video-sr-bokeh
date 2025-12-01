@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+### macOS template
+# General
+.DS_Store
+.AppleDouble
+.LSOverride
