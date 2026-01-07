@@ -12,6 +12,7 @@ default-groups = ["dev", "ci"]
 
 [dependency-groups]
 dev = [
+    "imagecodecs>=2026.1.1",
     "matplotlib>=3.10.8",
     "numpy>=2.4.0",
     "pillow>=12.1.0",
