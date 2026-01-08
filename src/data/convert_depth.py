@@ -1,18 +1,36 @@
 #!/usr/bin/env python3
-"""Convert TIFF depth maps to PNG format.
+"""Convert TIFF depth maps to PNG format for depth_pro.
 
 This script converts 32-bit TIFF depth maps to 8-bit grayscale PNG files.
 The depth values are normalized across all images for consistent scaling.
 
+Input structure (data/tiff):
+    data/tiff/
+    ├── 0000/
+    │   ├── 000.tif
+    │   ├── 001.tif
+    │   └── ...
+    ├── 0001/
+    └── ...
+
+Output structure (data/depth_pro):
+    data/depth_pro/
+    ├── 0000/
+    │   ├── 000.png
+    │   ├── 001.png
+    │   └── ...
+    ├── 0001/
+    └── ...
+
 Usage:
     # Convert a single sequence
-    python src/data/convert_depth.py --input data/depth/0000/png
+    python src/data/convert_depth.py --input data/tiff/0000 --output data/depth_pro/0000
 
-    # Convert all sequences
+    # Convert all sequences (recommended)
     python src/data/convert_depth.py --all-dirs
 
     # Invert depth (closer = brighter)
-    python src/data/convert_depth.py --input data/depth/0000/png --invert
+    python src/data/convert_depth.py --all-dirs --invert
 """
 
 from __future__ import annotations
@@ -24,26 +42,25 @@ import numpy as np
 import tifffile
 from PIL import Image
 
+# Directory configuration
+TIFF_DIR = Path("data/tiff")
+DEPTH_PRO_DIR = Path("data/depth_pro2")
+
 
 def convert_tiff_to_png(
     input_dir: str | Path,
-    output_dir: str | Path | None = None,
+    output_dir: str | Path,
     invert: bool = False,
 ) -> None:
     """Convert TIFF depth maps to 8-bit PNG format.
 
     Args:
         input_dir: Directory containing TIFF depth maps.
-        output_dir: Output directory for PNG files. If None, creates 'png' sibling folder.
+        output_dir: Output directory for PNG files.
         invert: If True, invert depth values (closer objects become brighter).
     """
     input_path = Path(input_dir)
-
-    # Default output directory: sibling 'png' folder
-    if output_dir is None:
-        output_path = input_path.parent / "png"
-    else:
-        output_path = Path(output_dir)
+    output_path = Path(output_dir)
 
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -102,22 +119,34 @@ def convert_tiff_to_png(
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Convert TIFF depth maps to 8-bit PNG format",
+        description="Convert TIFF depth maps to 8-bit PNG format for depth_pro",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Convert all sequences from data/tiff to data/depth_pro
+    python src/data/convert_depth.py --all-dirs
+
+    # Convert a single sequence
+    python src/data/convert_depth.py -i data/tiff/0000 -o data/depth_pro/0000
+
+    # Convert with inverted depth (closer = brighter)
+    python src/data/convert_depth.py --all-dirs --invert
+        """,
     )
 
     parser.add_argument(
         "--input",
         "-i",
         type=Path,
-        default=Path("data/depth/0000/tiff"),
-        help="Input directory containing TIFF depth maps",
+        default=None,
+        help="Input directory containing TIFF depth maps (e.g., data/tiff/0000)",
     )
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
         default=None,
-        help="Output directory for PNG files (default: sibling 'png' folder)",
+        help="Output directory for PNG files (e.g., data/depth_pro/0000)",
     )
     parser.add_argument(
         "--invert",
@@ -127,25 +156,26 @@ def main():
     parser.add_argument(
         "--all-dirs",
         action="store_true",
-        help="Process all sequences in data/depth/",
+        help=f"Process all sequences: {TIFF_DIR}/* -> {DEPTH_PRO_DIR}/*",
     )
 
     args = parser.parse_args()
 
     if args.all_dirs:
-        base_dir = Path("data/depth")
-        if not base_dir.exists():
-            print(f"Error: {base_dir} does not exist")
+        # Process all subdirectories in data/tiff
+        if not TIFF_DIR.exists():
+            print(f"Error: {TIFF_DIR} does not exist")
             return
 
-        subdirs = sorted([d for d in base_dir.iterdir() if d.is_dir()])
+        subdirs = sorted([d for d in TIFF_DIR.iterdir() if d.is_dir()])
+        if not subdirs:
+            print(f"No subdirectories found in {TIFF_DIR}")
+            return
+
+        print(f"Processing {len(subdirs)} sequences from {TIFF_DIR} to {DEPTH_PRO_DIR}")
+
         for subdir in subdirs:
             if subdir.name.startswith("."):
-                continue
-
-            maps_dir = subdir / "tiff"
-            if not maps_dir.exists():
-                print(f"Skipping {subdir.name}: no 'tiff' folder")
                 continue
 
             print(f"\n{'=' * 60}")
@@ -153,14 +183,28 @@ def main():
             print(f"{'=' * 60}")
 
             convert_tiff_to_png(
-                input_dir=maps_dir,
-                output_dir=subdir / "png",
+                input_dir=subdir,
+                output_dir=DEPTH_PRO_DIR / subdir.name,
                 invert=args.invert,
             )
+
+        print(f"\n{'=' * 60}")
+        print("All sequences processed successfully!")
+        print(f"{'=' * 60}")
     else:
+        # Process single directory
+        if args.input is None:
+            parser.error("--input is required when not using --all-dirs")
+
+        if args.output is None:
+            # Default: replace 'tiff' with 'depth_pro' in path
+            output = DEPTH_PRO_DIR / args.input.name
+        else:
+            output = args.output
+
         convert_tiff_to_png(
             input_dir=args.input,
-            output_dir=args.output,
+            output_dir=output,
             invert=args.invert,
         )
 
