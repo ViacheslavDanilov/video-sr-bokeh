@@ -1,50 +1,91 @@
-"""Visualize depth maps with proper normalization and colormap."""
+"""Visualize depth maps with proper normalization and colormap.
+
+This script visualizes depth maps from depth_pro or depth_anything directories.
+
+Input structure:
+    data/depth_pro/           (or data/depth_anything/)
+    ├── 0000/
+    │   ├── 000.png
+    │   ├── 001.png
+    │   └── ...
+    ├── 0001/
+    └── ...
+
+Output structure (parallel _viz directory):
+    data/depth_pro_viz/       (or data/depth_anything_viz/)
+    ├── 0000/
+    │   ├── 000.png (colorized)
+    │   ├── 001.png
+    │   ├── depth_grid_turbo.png
+    │   └── ...
+    ├── 0001/
+    └── ...
+
+Usage:
+    # Visualize all sequences in depth_pro -> depth_pro_viz
+    python src/data/visualize_depth.py --input data/depth_pro --all-dirs
+
+    # Visualize all sequences in depth_anything -> depth_anything_viz
+    python src/data/visualize_depth.py --input data/depth_anything --all-dirs
+
+    # Visualize a single sequence with custom output
+    python src/data/visualize_depth.py --input data/depth_pro/0000 --output data/my_viz/0000
+
+    # Use a different colormap
+    python src/data/visualize_depth.py --input data/depth_pro --all-dirs --colormap viridis
+"""
 
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import tifffile
+from PIL import Image
 
 
 def visualize_depth_maps(
-    input_dir: str = "data/depth/0000/tiff",
-    output_dir: str = "data/depth/0000/viz",
+    input_dir: str | Path,
+    output_dir: str | Path,
     colormap: str = "turbo",
     save_individual: bool = True,
     create_grid: bool = True,
-):
+) -> None:
     """Visualize depth maps with proper normalization.
 
     Args:
-        input_dir: Directory containing depth map TIFF files
-        output_dir: Directory to save visualized images
-        colormap: Matplotlib colormap to use (e.g., 'turbo', 'viridis', 'plasma', 'magma')
-        save_individual: Save each depth map as individual PNG
-        create_grid: Create a grid visualization of all depth maps
+        input_dir: Directory containing depth map PNG files.
+        output_dir: Directory to save visualized images.
+        colormap: Matplotlib colormap to use (e.g., 'turbo', 'viridis', 'plasma', 'magma').
+        save_individual: Save each depth map as individual PNG.
+        create_grid: Create a grid visualization of all depth maps.
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
+
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Get all TIFF files
-    tiff_files = sorted(input_path.glob("*.tif"))
-    print(f"Found {len(tiff_files)} depth map files in {input_dir}")
+    # Get all PNG files (depth maps)
+    png_files = sorted(input_path.glob("*.png"))
+
+    if not png_files:
+        print(f"No PNG files found in {input_path}")
+        return
+
+    print(f"Found {len(png_files)} depth map files in {input_dir}")
 
     depth_maps = []
-    for tiff_file in tiff_files:
+    for png_file in png_files:
         # Load depth map
-        depth = tifffile.imread(tiff_file)
+        img = Image.open(png_file)
+        depth = np.array(img)
 
-        # Convert to grayscale if multi-channel (take first channel or average)
+        # Convert to grayscale if multi-channel
         if len(depth.shape) == 3:
-            # Use the first channel or average all channels
-            depth = depth[:, :, 0]  # or use: depth.mean(axis=2)
+            depth = depth[:, :, 0]
 
-        depth_maps.append((tiff_file.stem, depth))
+        depth_maps.append((png_file.stem, depth))
 
         print(
-            f"  {tiff_file.name}: shape={depth.shape}, min={depth.min():.2f}, max={depth.max():.2f}",
+            f"  {png_file.name}: shape={depth.shape}, min={depth.min():.2f}, max={depth.max():.2f}",
         )
 
     # Find global min/max for consistent normalization across all images
@@ -54,10 +95,13 @@ def visualize_depth_maps(
 
     # Save individual visualizations
     if save_individual:
-        print(f"\nSaving individual visualizations to {output_dir}/")
+        print(f"\nSaving individual visualizations to {output_path}/")
         for name, depth in depth_maps:
             # Normalize to 0-1 range
-            depth_norm = (depth - global_min) / (global_max - global_min)
+            if (global_max - global_min) > 0:
+                depth_norm = (depth - global_min) / (global_max - global_min)
+            else:
+                depth_norm = np.zeros_like(depth, dtype=float)
 
             # Apply colormap
             cmap = plt.get_cmap(colormap)
@@ -88,9 +132,12 @@ def visualize_depth_maps(
             ax = axes[row, col]
 
             # Normalize
-            depth_norm = (depth - global_min) / (global_max - global_min)
+            if (global_max - global_min) > 0:
+                depth_norm = (depth - global_min) / (global_max - global_min)
+            else:
+                depth_norm = np.zeros_like(depth, dtype=float)
 
-            im = ax.imshow(depth_norm, cmap=colormap, vmin=0, vmax=1)
+            ax.imshow(depth_norm, cmap=colormap, vmin=0, vmax=1)
             ax.set_title(f"{name}", fontsize=10)
             ax.axis("off")
 
@@ -99,7 +146,7 @@ def visualize_depth_maps(
             row, col = idx // cols, idx % cols
             axes[row, col].axis("off")
 
-        plt.suptitle(f"Depth Maps Visualization", fontsize=14)
+        plt.suptitle("Depth Maps Visualization", fontsize=14)
         plt.tight_layout()
 
         grid_file = output_path / f"depth_grid_{colormap}.png"
@@ -108,24 +155,57 @@ def visualize_depth_maps(
         print(f"\nSaved grid visualization: {grid_file}")
 
 
+def get_viz_output_dir(input_dir: Path) -> Path:
+    """Generate the visualization output directory path.
+
+    Appends '_viz' to the input directory name.
+    Example: data/depth_pro -> data/depth_pro_viz
+
+    Args:
+        input_dir: Input base directory.
+
+    Returns:
+        Output directory path with '_viz' suffix.
+    """
+    return input_dir.parent / f"{input_dir.name}_viz"
+
+
 def main():
-    """Run visualization for all depth map directories."""
+    """CLI entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Visualize depth maps")
+    parser = argparse.ArgumentParser(
+        description="Visualize depth maps with colormap",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Visualize all sequences in depth_pro -> depth_pro_viz
+    python src/data/visualize_depth.py --input data/depth_pro --all-dirs
+
+    # Visualize all sequences in depth_anything -> depth_anything_viz
+    python src/data/visualize_depth.py --input data/depth_anything --all-dirs
+
+    # Visualize a single sequence with custom output
+    python src/data/visualize_depth.py --input data/depth_pro/0000 --output data/my_viz/0000
+
+    # Use a different colormap
+    python src/data/visualize_depth.py --input data/depth_pro --all-dirs --colormap viridis
+        """,
+    )
+
     parser.add_argument(
         "--input",
         "-i",
-        type=str,
-        default="data/depth/0000/tiff",
-        help="Input directory containing depth map TIFF files",
+        type=Path,
+        default=Path("data/depth_pro"),
+        help="Input directory (base dir with --all-dirs, or sequence dir)",
     )
     parser.add_argument(
         "--output",
         "-o",
-        type=str,
+        type=Path,
         default=None,
-        help="Output directory for visualizations (default: input_viz)",
+        help="Output directory for visualizations (default: input_viz for --all-dirs)",
     )
     parser.add_argument(
         "--colormap",
@@ -138,33 +218,58 @@ def main():
     parser.add_argument(
         "--all-dirs",
         action="store_true",
-        help="Process all subdirectories in data/depth/",
+        help="Process all subdirectories in the input directory",
     )
 
     args = parser.parse_args()
 
     if args.all_dirs:
-        # Process all subdirectories
-        base_dir = Path("data/depth")
-        subdirs = sorted([d for d in base_dir.iterdir() if d.is_dir()])
+        # Process all subdirectories in the input directory
+        if not args.input.exists():
+            print(f"Error: {args.input} does not exist")
+            return
+
+        subdirs = sorted([d for d in args.input.iterdir() if d.is_dir()])
+        if not subdirs:
+            print(f"No subdirectories found in {args.input}")
+            return
+
+        # Determine output base directory
+        if args.output is None:
+            output_base = get_viz_output_dir(args.input)
+        else:
+            output_base = args.output
+
+        print(f"Processing {len(subdirs)} sequences")
+        print(f"Input:  {args.input}")
+        print(f"Output: {output_base}")
+
         for subdir in subdirs:
             if subdir.name.startswith("."):
                 continue
-            input_subdir = subdir / "tiff"
-            output_dir = str(subdir / "viz")
+
             print(f"\n{'=' * 60}")
-            print(f"Processing: {subdir}")
+            print(f"Processing: {subdir.name}")
             print(f"{'=' * 60}")
+
             visualize_depth_maps(
-                input_dir=str(input_subdir),
-                output_dir=output_dir,
+                input_dir=subdir,
+                output_dir=output_base / subdir.name,
                 colormap=args.colormap,
             )
+
+        print(f"\n{'=' * 60}")
+        print("All sequences processed successfully!")
+        print(f"{'=' * 60}")
     else:
-        output_dir = args.output or args.input.replace("/tiff", "/viz")
+        # Process single directory
+        if args.output is None:
+            print("Error: --output is required when not using --all-dirs")
+            return
+
         visualize_depth_maps(
             input_dir=args.input,
-            output_dir=output_dir,
+            output_dir=args.output,
             colormap=args.colormap,
         )
 
