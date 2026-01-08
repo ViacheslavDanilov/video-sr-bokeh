@@ -8,8 +8,8 @@ import tifffile
 
 
 def visualize_depth_maps(
-    input_dir: str = "data/depth_maps/0000",
-    output_dir: str = "data/depth_maps_viz/0000",
+    input_dir: str = "data/depth/0000/tiff",
+    output_dir: str = "data/depth/0000/viz",
     colormap: str = "turbo",
     save_individual: bool = True,
     create_grid: bool = True,
@@ -117,7 +117,7 @@ def main():
         "--input",
         "-i",
         type=str,
-        default="data/depth_maps/0000",
+        default="data/depth/0000/tiff",
         help="Input directory containing depth map TIFF files",
     )
     parser.add_argument(
@@ -138,29 +138,30 @@ def main():
     parser.add_argument(
         "--all-dirs",
         action="store_true",
-        help="Process all subdirectories in data/depth_maps/",
+        help="Process all subdirectories in data/depth/",
     )
 
     args = parser.parse_args()
 
     if args.all_dirs:
         # Process all subdirectories
-        base_dir = Path("data/depth_maps")
+        base_dir = Path("data/depth")
         subdirs = sorted([d for d in base_dir.iterdir() if d.is_dir()])
         for subdir in subdirs:
             if subdir.name.startswith("."):
                 continue
-            output_dir = str(subdir).replace("depth_maps", "depth_maps_viz")
+            input_subdir = subdir / "tiff"
+            output_dir = str(subdir / "viz")
             print(f"\n{'=' * 60}")
             print(f"Processing: {subdir}")
             print(f"{'=' * 60}")
             visualize_depth_maps(
-                input_dir=str(subdir),
+                input_dir=str(input_subdir),
                 output_dir=output_dir,
                 colormap=args.colormap,
             )
     else:
-        output_dir = args.output or args.input.replace("depth_maps", "depth_maps_viz")
+        output_dir = args.output or args.input.replace("/tiff", "/viz")
         visualize_depth_maps(
             input_dir=args.input,
             output_dir=output_dir,
